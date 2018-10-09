@@ -39,21 +39,12 @@ import (
 	"golang.org/x/net/html"
 )
 
-// Client is a FurAffinity c.
+// Client is a FurAffinity client.
 type Client struct {
 	http                 http.Client
 	config               Config
 	journalRegexp        *regexp.Regexp
 	submissionDataRegexp *regexp.Regexp
-}
-
-type subtreeProcessor struct {
-	tagHandlers []tagHandler
-}
-
-type tagHandler interface {
-	Matches(n *html.Node) (matches bool)
-	Process(n *html.Node) (recurseChildren bool)
 }
 
 // New creates a new Client with the given configuration.
@@ -120,32 +111,4 @@ func (c *Client) get(uri string) (*html.Node, error) {
 	}
 
 	return html.Parse(res.Body)
-}
-
-func (rp *subtreeProcessor) processNode(n *html.Node) {
-	for _, h := range rp.tagHandlers {
-		if h.Matches(n) {
-			if !h.Process(n) {
-				return
-			}
-			break
-		}
-	}
-
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		rp.processNode(c)
-	}
-}
-
-func findAttribute(attrs []html.Attribute, name string) string {
-	for _, a := range attrs {
-		if a.Key == name {
-			return a.Val
-		}
-	}
-	return ""
-}
-
-func checkNodeTagNameAndID(n *html.Node, name, id string) bool {
-	return n.Type == html.ElementNode && n.Data == name && findAttribute(n.Attr, "id") == id
 }

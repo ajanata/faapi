@@ -67,6 +67,40 @@ func (c *Client) NewUser(name string) *User {
 	}
 }
 
+// GetRecent retrieves the user's most recent submissions and journals.
+func (u *User) GetRecent() ([]*Submission, []*Journal, error) {
+	log.WithField("user", u).Debug("Retrieving recent submissions and journals")
+	var subs []*Submission
+	var journs []*Journal
+
+	root, err := u.c.get("/user/" + u.name)
+	if err != nil {
+		return subs, journs, err
+	}
+
+	submissions := &submissionSectionHandler{}
+	journals := &journalHandler{
+		client: u.c,
+	}
+	scripts := &scriptHandler{
+		client: u.c,
+	}
+
+	rp := &subtreeProcessor{
+		tagHandlers: []tagHandler{
+			submissions,
+			journals,
+			scripts,
+		},
+	}
+	rp.processNode(root)
+
+	subs = u.c.submissionsFromData(submissions.ids, scripts.data)
+	journs = u.c.journalsFromData(journals.ids, journals.titles)
+
+	return subs, journs, nil
+}
+
 func (s Submission) String() string {
 	return fmt.Sprintf("%s (%s)", s.title, s.id)
 }
@@ -107,40 +141,6 @@ func (c *Client) newJournal(id, title string) *Journal {
 	}
 }
 
-// GetRecent retrieves the user's most recent submissions and journals.
-func (u *User) GetRecent() ([]*Submission, []*Journal, error) {
-	log.WithField("user", u).Debug("Retrieving recent submissions and journals")
-	var subs []*Submission
-	var journs []*Journal
-
-	root, err := u.c.get("/user/" + u.name)
-	if err != nil {
-		return subs, journs, err
-	}
-
-	submissions := &submissionSectionHandler{}
-	journals := &journalHandler{
-		client: u.c,
-	}
-	scripts := &scriptHandler{
-		client: u.c,
-	}
-
-	rp := &subtreeProcessor{
-		tagHandlers: []tagHandler{
-			submissions,
-			journals,
-			scripts,
-		},
-	}
-	rp.processNode(root)
-
-	subs = u.c.submissionsFromData(submissions.ids, scripts.data)
-	journs = u.c.journalsFromData(journals.ids, journals.titles)
-
-	return subs, journs, nil
-}
-
 type scriptHandler struct {
 	client *Client
 	data   map[string]faSubmission
@@ -163,8 +163,7 @@ func (s *scriptHandler) Process(n *html.Node) (recurseChildren bool) {
 
 // submissionSectionHandler finds and extracts the recent submissionHandler section
 type submissionSectionHandler struct {
-	ids    []string
-	titles []string
+	ids []string
 }
 
 func (*submissionSectionHandler) Matches(n *html.Node) bool {
@@ -181,14 +180,12 @@ func (sh *submissionSectionHandler) Process(n *html.Node) bool {
 	p.processNode(n)
 
 	sh.ids = s.ids
-	sh.titles = s.titles
 	return false
 }
 
 // submissionHandler finds and extracts each submission
 type submissionHandler struct {
-	ids    []string
-	titles []string
+	ids []string
 }
 
 func (*submissionHandler) Matches(n *html.Node) bool {
@@ -197,7 +194,6 @@ func (*submissionHandler) Matches(n *html.Node) bool {
 
 func (s *submissionHandler) Process(n *html.Node) bool {
 	s.ids = append(s.ids, strings.Replace(findAttribute(n.Attr, "id"), "sid-", "", 1))
-	s.titles = append(s.titles, "")
 	return false
 }
 

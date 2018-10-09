@@ -28,8 +28,41 @@
 
 package faapi
 
-// Config is the configuration for the client.
-type Config struct {
-	Proxy     string
-	UserAgent string
+import "golang.org/x/net/html"
+
+type subtreeProcessor struct {
+	tagHandlers []tagHandler
+}
+
+type tagHandler interface {
+	Matches(n *html.Node) (matches bool)
+	Process(n *html.Node) (recurseChildren bool)
+}
+
+func (rp *subtreeProcessor) processNode(n *html.Node) {
+	for _, h := range rp.tagHandlers {
+		if h.Matches(n) {
+			if !h.Process(n) {
+				return
+			}
+			break
+		}
+	}
+
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		rp.processNode(c)
+	}
+}
+
+func findAttribute(attrs []html.Attribute, name string) string {
+	for _, a := range attrs {
+		if a.Key == name {
+			return a.Val
+		}
+	}
+	return ""
+}
+
+func checkNodeTagNameAndID(n *html.Node, name, id string) bool {
+	return n.Type == html.ElementNode && n.Data == name && findAttribute(n.Attr, "id") == id
 }
