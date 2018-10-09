@@ -42,13 +42,15 @@ type User struct {
 }
 
 type Submission struct {
-	c  *Client
-	id string
+	c     *Client
+	id    string
+	title string
 }
 
 type Journal struct {
-	c  *Client
-	id string
+	c     *Client
+	id    string
+	title string
 }
 
 func (c *Client) NewUser(name string) *User {
@@ -59,42 +61,42 @@ func (c *Client) NewUser(name string) *User {
 }
 
 func (s Submission) String() string {
-	return s.id
+	return fmt.Sprintf("%s (%s)", s.title, s.id)
 }
 
 func (j Journal) String() string {
-	return j.id
+	return fmt.Sprintf("%s (%s)", j.title, j.id)
 }
 
-func (c *Client) submissionsFromIDs(ids []string) []*Submission {
+func (c *Client) submissionsFromData(ids, titles []string) []*Submission {
 	subs := make([]*Submission, len(ids))
 	for i, id := range ids {
-		subs[i] = c.newSubmission(id)
+		subs[i] = c.newSubmission(id, titles[i])
 	}
 	return subs
 }
 
-func (c *Client) journalsFromIDs(ids map[string]bool) []*Journal {
+func (c *Client) journalsFromData(ids, titles []string) []*Journal {
 	journs := make([]*Journal, len(ids))
-	i := 0
-	for id := range ids {
-		journs[i] = c.newJournal(id)
-		i++
+	for i, id := range ids {
+		journs[i] = c.newJournal(id, titles[i])
 	}
 	return journs
 }
 
-func (c *Client) newSubmission(id string) *Submission {
+func (c *Client) newSubmission(id, title string) *Submission {
 	return &Submission{
-		c:  c,
-		id: strings.Replace(id, "sid-", "", 1),
+		c:     c,
+		id:    strings.Replace(id, "sid-", "", 1),
+		title: title,
 	}
 }
 
-func (c *Client) newJournal(id string) *Journal {
+func (c *Client) newJournal(id, title string) *Journal {
 	return &Journal{
-		c:  c,
-		id: id,
+		c:     c,
+		id:    id,
+		title: title,
 	}
 }
 
@@ -111,7 +113,6 @@ func (u *User) GetRecent() ([]*Submission, []*Journal, error) {
 	submissions := &submissionSectionHandler{}
 	journals := &journalHandler{
 		client: u.c,
-		ids:    make(map[string]bool),
 	}
 
 	rp := &subtreeProcessor{
@@ -122,15 +123,16 @@ func (u *User) GetRecent() ([]*Submission, []*Journal, error) {
 	}
 	rp.processNode(root)
 
-	subs = u.c.submissionsFromIDs(submissions.ids)
-	journs = u.c.journalsFromIDs(journals.ids)
+	subs = u.c.submissionsFromData(submissions.ids, submissions.titles)
+	journs = u.c.journalsFromData(journals.ids, journals.titles)
 
 	return subs, journs, nil
 }
 
 // submissionSectionHandler finds and extracts the recent submissionHandler section
 type submissionSectionHandler struct {
-	ids []string
+	ids    []string
+	titles []string
 }
 
 func (*submissionSectionHandler) Matches(n *html.Node) bool {
@@ -147,12 +149,14 @@ func (sh *submissionSectionHandler) Process(n *html.Node) bool {
 	p.processNode(n)
 
 	sh.ids = s.ids
+	sh.titles = s.titles
 	return false
 }
 
 // submissionHandler finds and extracts each submission
 type submissionHandler struct {
-	ids []string
+	ids    []string
+	titles []string
 }
 
 func (*submissionHandler) Matches(n *html.Node) bool {
@@ -160,20 +164,29 @@ func (*submissionHandler) Matches(n *html.Node) bool {
 }
 
 func (s *submissionHandler) Process(n *html.Node) bool {
-	s.ids = append(s.ids, findAttribute(n.Attr, "id"))
+	s.ids = append(s.ids, strings.Replace(findAttribute(n.Attr, "id"), "sid-", "", 1))
+	s.titles = append(s.titles, "")
 	return false
 }
 
 // journalHandler finds and retrieves journal links
 type journalHandler struct {
 	client *Client
-	ids    map[string]bool
+	ids    []string
+	titles []string
 }
 
 func (j *journalHandler) Matches(n *html.Node) bool {
 	if n.Type == html.ElementNode && n.Data == "a" {
 		href := findAttribute(n.Attr, "href")
-		return j.client.journalRegexp.MatchString(href)
+		if j.client.journalRegexp.MatchString(href) {
+			linkText := n.FirstChild
+			// Exclude other links that lead to the journal that don't include its title.
+			if linkText != nil && linkText.Type == html.TextNode {
+				return !strings.HasPrefix(linkText.Data, "Comments ") && linkText.Data != "Read more..."
+			}
+		}
+		return false
 	}
 	return false
 }
@@ -181,15 +194,11 @@ func (j *journalHandler) Matches(n *html.Node) bool {
 func (j *journalHandler) Process(n *html.Node) bool {
 	href := findAttribute(n.Attr, "href")
 	id := j.client.journalRegexp.FindStringSubmatch(href)[1]
-	j.ids[id] = true
+	j.ids = append(j.ids, id)
+	j.titles = append(j.titles, n.FirstChild.Data)
 	return false
 }
 
 func (j *journalHandler) String() string {
-	ids := make([]string, len(j.ids))
-	i := 0
-	for id := range j.ids {
-		ids[i] = id
-	}
-	return fmt.Sprintf("%+v", ids)
+	return fmt.Sprintf("%+v", j.ids)
 }
