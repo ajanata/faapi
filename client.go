@@ -41,9 +41,10 @@ import (
 
 // Client is a FurAffinity c.
 type Client struct {
-	http          http.Client
-	config        Config
-	journalRegexp *regexp.Regexp
+	http                 http.Client
+	config               Config
+	journalRegexp        *regexp.Regexp
+	submissionDataRegexp *regexp.Regexp
 }
 
 type subtreeProcessor struct {
@@ -62,6 +63,11 @@ func New(config Config) (*Client, error) {
 		return nil, err
 	}
 
+	submissionDataRegexp, err := regexp.Compile(`var submission_data = (.*}});`)
+	if err != nil {
+		return nil, err
+	}
+
 	tr := http.Transport{}
 	if config.Proxy != "" {
 		purl, err := url.Parse(config.Proxy)
@@ -75,8 +81,9 @@ func New(config Config) (*Client, error) {
 		http: http.Client{
 			Transport: &tr,
 		},
-		config:        config,
-		journalRegexp: journalRegexp,
+		config:               config,
+		journalRegexp:        journalRegexp,
+		submissionDataRegexp: submissionDataRegexp,
 	}, nil
 }
 

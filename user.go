@@ -29,6 +29,7 @@
 package faapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -45,6 +46,12 @@ type Submission struct {
 	c     *Client
 	id    string
 	title string
+}
+
+type faSubmission struct {
+	Rating   string `json:"icon_rating"`
+	Title    string `json:"title"`
+	Username string `json:"username"`
 }
 
 type Journal struct {
@@ -68,10 +75,10 @@ func (j Journal) String() string {
 	return fmt.Sprintf("%s (%s)", j.title, j.id)
 }
 
-func (c *Client) submissionsFromData(ids, titles []string) []*Submission {
+func (c *Client) submissionsFromData(ids []string, data map[string]faSubmission) []*Submission {
 	subs := make([]*Submission, len(ids))
 	for i, id := range ids {
-		subs[i] = c.newSubmission(id, titles[i])
+		subs[i] = c.newSubmission(id, data[id].Title)
 	}
 	return subs
 }
@@ -100,8 +107,9 @@ func (c *Client) newJournal(id, title string) *Journal {
 	}
 }
 
+// GetRecent retrieves the user's most recent submissions and journals.
 func (u *User) GetRecent() ([]*Submission, []*Journal, error) {
-	log.WithField("user", u).Debug("Retrieving recent submissionHandler and journals")
+	log.WithField("user", u).Debug("Retrieving recent submissions and journals")
 	var subs []*Submission
 	var journs []*Journal
 
@@ -114,19 +122,43 @@ func (u *User) GetRecent() ([]*Submission, []*Journal, error) {
 	journals := &journalHandler{
 		client: u.c,
 	}
+	scripts := &scriptHandler{
+		client: u.c,
+	}
 
 	rp := &subtreeProcessor{
 		tagHandlers: []tagHandler{
 			submissions,
 			journals,
+			scripts,
 		},
 	}
 	rp.processNode(root)
 
-	subs = u.c.submissionsFromData(submissions.ids, submissions.titles)
+	subs = u.c.submissionsFromData(submissions.ids, scripts.data)
 	journs = u.c.journalsFromData(journals.ids, journals.titles)
 
 	return subs, journs, nil
+}
+
+type scriptHandler struct {
+	client *Client
+	data   map[string]faSubmission
+}
+
+func (s *scriptHandler) Matches(n *html.Node) (matches bool) {
+	return n.Type == html.ElementNode && n.Data == "script" && n.FirstChild != nil &&
+		s.client.submissionDataRegexp.MatchString(n.FirstChild.Data)
+}
+
+func (s *scriptHandler) Process(n *html.Node) (recurseChildren bool) {
+	raw := s.client.submissionDataRegexp.FindStringSubmatch(n.FirstChild.Data)[1]
+	data := make(map[string]faSubmission)
+	if err := json.Unmarshal([]byte(raw), &data); err != nil {
+		log.WithError(err).Error("Unable to unmarshal submission JSON data")
+	}
+	s.data = data
+	return false
 }
 
 // submissionSectionHandler finds and extracts the recent submissionHandler section
