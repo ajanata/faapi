@@ -30,10 +30,12 @@ package faapi
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/html"
@@ -45,6 +47,21 @@ type Client struct {
 	config               Config
 	journalRegexp        *regexp.Regexp
 	submissionDataRegexp *regexp.Regexp
+}
+
+// SubmissionInfo is general information about a submission.
+type SubmissionInfo struct {
+	c     *Client
+	id    string
+	title string
+	user  string
+}
+
+// JournalInfo is general information about a journal.
+type JournalInfo struct {
+	c     *Client
+	id    string
+	title string
 }
 
 // New creates a new Client with the given configuration.
@@ -78,9 +95,9 @@ func New(config Config) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) newRequest(method, uri string) (*http.Request, error) {
+func (c *Client) newRequest(method, uri string, body io.Reader) (*http.Request, error) {
 	log.WithField("uri", uri).Debug("Creating new request")
-	req, err := http.NewRequest(method, "https://furaffinity.net"+uri, nil)
+	req, err := http.NewRequest(method, "https://www.furaffinity.net"+uri, body)
 	if err != nil {
 		return nil, err
 	}
@@ -88,11 +105,11 @@ func (c *Client) newRequest(method, uri string) (*http.Request, error) {
 	return req, nil
 }
 
-func (c *Client) get(uri string) (*html.Node, error) {
-	req, err := c.newRequest(http.MethodGet, uri)
-	if err != nil {
-		return nil, err
-	}
+func (c *Client) do(req *http.Request) (*html.Node, error) {
+	log.WithFields(log.Fields{
+		"url":    req.URL,
+		"method": req.Method,
+	}).Debug("Making request")
 
 	res, err := c.http.Do(req)
 	if err != nil {
@@ -103,12 +120,67 @@ func (c *Client) get(uri string) (*html.Node, error) {
 	if res.StatusCode != http.StatusOK {
 		bb, _ := ioutil.ReadAll(res.Body)
 		log.WithFields(log.Fields{
-			"uri":  uri,
+			"url":  req.URL,
 			"code": res.StatusCode,
 			"body": string(bb),
 		}).Error("Unexpected HTTP response code")
 		return nil, fmt.Errorf("HTTP response %d not expected", res.StatusCode)
 	}
 
+	if cType := res.Header.Get("Content-Type"); !strings.HasPrefix(cType, "text/html") {
+		bb, _ := ioutil.ReadAll(res.Body)
+		log.WithFields(log.Fields{
+			"url":          req.URL,
+			"content-type": cType,
+			"body":         string(bb),
+		}).Error("Unexpected content-type")
+		return nil, fmt.Errorf("response content-type %s not expected", cType)
+	}
+
 	return html.Parse(res.Body)
+}
+
+func (c *Client) get(uri string) (*html.Node, error) {
+	req, err := c.newRequest(http.MethodGet, uri, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.do(req)
+}
+
+func (c *Client) post(uri string, values url.Values) (*html.Node, error) {
+	log.WithField("values", values.Encode()).Debug("POST parameters")
+	req, err := c.newRequest(http.MethodPost, uri, strings.NewReader(values.Encode()))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	return c.do(req)
+}
+
+func (s SubmissionInfo) String() string {
+	return fmt.Sprintf("%s by %s (%s)", s.title, s.user, s.id)
+}
+
+func (c *Client) newSubmissionInfo(id, user, title string) *SubmissionInfo {
+	return &SubmissionInfo{
+		c:     c,
+		id:    strings.Replace(id, "sid-", "", 1),
+		title: title,
+		user:  user,
+	}
+}
+
+func (j JournalInfo) String() string {
+	return fmt.Sprintf("%s (%s)", j.title, j.id)
+}
+
+func (c *Client) newJournalInfo(id, title string) *JournalInfo {
+	return &JournalInfo{
+		c:     c,
+		id:    id,
+		title: title,
+	}
 }

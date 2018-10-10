@@ -52,5 +52,11 @@ func main() {
 	log.WithFields(log.Fields{
 		"submissions": subs,
 		"journals":    journs,
-	}).Info("done")
+	}).Info("user recents")
+
+	subs, err = c.NewSearch("@keywords ych").GetPage(1)
+	if err != nil {
+		panic(err)
+	}
+	log.WithField("results", subs).Info("search results")
 }

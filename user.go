@@ -42,22 +42,10 @@ type User struct {
 	name string
 }
 
-type Submission struct {
-	c     *Client
-	id    string
-	title string
-}
-
 type faSubmission struct {
-	Rating   string `json:"icon_rating"`
-	Title    string `json:"title"`
-	Username string `json:"username"`
-}
-
-type Journal struct {
-	c     *Client
-	id    string
-	title string
+	Rating string `json:"icon_rating"`
+	Title  string `json:"title"`
+	User   string `json:"username"`
 }
 
 func (c *Client) NewUser(name string) *User {
@@ -68,10 +56,10 @@ func (c *Client) NewUser(name string) *User {
 }
 
 // GetRecent retrieves the user's most recent submissions and journals.
-func (u *User) GetRecent() ([]*Submission, []*Journal, error) {
+func (u *User) GetRecent() ([]*SubmissionInfo, []*JournalInfo, error) {
 	log.WithField("user", u).Debug("Retrieving recent submissions and journals")
-	var subs []*Submission
-	var journs []*Journal
+	var subs []*SubmissionInfo
+	var journs []*JournalInfo
 
 	root, err := u.c.get("/user/" + u.name)
 	if err != nil {
@@ -80,10 +68,10 @@ func (u *User) GetRecent() ([]*Submission, []*Journal, error) {
 
 	submissions := &submissionSectionHandler{}
 	journals := &journalHandler{
-		client: u.c,
+		c: u.c,
 	}
 	scripts := &scriptHandler{
-		client: u.c,
+		c: u.c,
 	}
 
 	rp := &subtreeProcessor{
@@ -101,58 +89,34 @@ func (u *User) GetRecent() ([]*Submission, []*Journal, error) {
 	return subs, journs, nil
 }
 
-func (s Submission) String() string {
-	return fmt.Sprintf("%s (%s)", s.title, s.id)
-}
-
-func (j Journal) String() string {
-	return fmt.Sprintf("%s (%s)", j.title, j.id)
-}
-
-func (c *Client) submissionsFromData(ids []string, data map[string]faSubmission) []*Submission {
-	subs := make([]*Submission, len(ids))
+func (c *Client) submissionsFromData(ids []string, data map[string]faSubmission) []*SubmissionInfo {
+	subs := make([]*SubmissionInfo, len(ids))
 	for i, id := range ids {
-		subs[i] = c.newSubmission(id, data[id].Title)
+		subs[i] = c.newSubmissionInfo(id, data[id].User, data[id].Title)
 	}
 	return subs
 }
 
-func (c *Client) journalsFromData(ids, titles []string) []*Journal {
-	journs := make([]*Journal, len(ids))
+func (c *Client) journalsFromData(ids, titles []string) []*JournalInfo {
+	journs := make([]*JournalInfo, len(ids))
 	for i, id := range ids {
-		journs[i] = c.newJournal(id, titles[i])
+		journs[i] = c.newJournalInfo(id, titles[i])
 	}
 	return journs
 }
 
-func (c *Client) newSubmission(id, title string) *Submission {
-	return &Submission{
-		c:     c,
-		id:    strings.Replace(id, "sid-", "", 1),
-		title: title,
-	}
-}
-
-func (c *Client) newJournal(id, title string) *Journal {
-	return &Journal{
-		c:     c,
-		id:    id,
-		title: title,
-	}
-}
-
 type scriptHandler struct {
-	client *Client
-	data   map[string]faSubmission
+	c    *Client
+	data map[string]faSubmission
 }
 
 func (s *scriptHandler) Matches(n *html.Node) (matches bool) {
 	return n.Type == html.ElementNode && n.Data == "script" && n.FirstChild != nil &&
-		s.client.submissionDataRegexp.MatchString(n.FirstChild.Data)
+		s.c.submissionDataRegexp.MatchString(n.FirstChild.Data)
 }
 
 func (s *scriptHandler) Process(n *html.Node) (recurseChildren bool) {
-	raw := s.client.submissionDataRegexp.FindStringSubmatch(n.FirstChild.Data)[1]
+	raw := s.c.submissionDataRegexp.FindStringSubmatch(n.FirstChild.Data)[1]
 	data := make(map[string]faSubmission)
 	if err := json.Unmarshal([]byte(raw), &data); err != nil {
 		log.WithError(err).Error("Unable to unmarshal submission JSON data")
@@ -199,7 +163,7 @@ func (s *submissionHandler) Process(n *html.Node) bool {
 
 // journalHandler finds and retrieves journal links
 type journalHandler struct {
-	client *Client
+	c      *Client
 	ids    []string
 	titles []string
 }
@@ -207,7 +171,7 @@ type journalHandler struct {
 func (j *journalHandler) Matches(n *html.Node) bool {
 	if n.Type == html.ElementNode && n.Data == "a" {
 		href := findAttribute(n.Attr, "href")
-		if j.client.journalRegexp.MatchString(href) {
+		if j.c.journalRegexp.MatchString(href) {
 			linkText := n.FirstChild
 			// Exclude other links that lead to the journal that don't include its title.
 			if linkText != nil && linkText.Type == html.TextNode {
@@ -221,7 +185,7 @@ func (j *journalHandler) Matches(n *html.Node) bool {
 
 func (j *journalHandler) Process(n *html.Node) bool {
 	href := findAttribute(n.Attr, "href")
-	id := j.client.journalRegexp.FindStringSubmatch(href)[1]
+	id := j.c.journalRegexp.FindStringSubmatch(href)[1]
 	j.ids = append(j.ids, id)
 	j.titles = append(j.titles, n.FirstChild.Data)
 	return false
