@@ -28,41 +28,22 @@
 
 package faapi
 
-import "golang.org/x/net/html"
+import (
+	"fmt"
+)
 
-type subtreeProcessor struct {
-	tagHandlers []tagHandler
+// Journal is a journal entry.
+type Journal struct {
+	c     *Client
+	ID    string
+	Title string
+	User  string
 }
 
-type tagHandler interface {
-	matches(n *html.Node) (matches bool)
-	process(n *html.Node) (recurseChildren bool)
+func (j Journal) String() string {
+	return fmt.Sprintf("%s (%s)", j.Title, j.ID)
 }
 
-func (rp *subtreeProcessor) processNode(n *html.Node) {
-	for _, h := range rp.tagHandlers {
-		if h.matches(n) {
-			if !h.process(n) {
-				return
-			}
-			break
-		}
-	}
-
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		rp.processNode(c)
-	}
-}
-
-func findAttribute(attrs []html.Attribute, name string) string {
-	for _, a := range attrs {
-		if a.Key == name {
-			return a.Val
-		}
-	}
-	return ""
-}
-
-func checkNodeTagNameAndID(n *html.Node, name, id string) bool {
-	return n.Type == html.ElementNode && n.Data == name && findAttribute(n.Attr, "id") == id
+func (j *Journal) URL() string {
+	return fmt.Sprintf("https://www.furaffinity.net/journal/%s/", j.ID)
 }

@@ -28,41 +28,30 @@
 
 package faapi
 
-import "golang.org/x/net/html"
+import (
+	"fmt"
+)
 
-type subtreeProcessor struct {
-	tagHandlers []tagHandler
+// Submission is an artwork submission.
+type Submission struct {
+	c          *Client
+	ID         string
+	PreviewURL string
+	Rating     Rating
+	Title      string
+	User       string
 }
 
-type tagHandler interface {
-	matches(n *html.Node) (matches bool)
-	process(n *html.Node) (recurseChildren bool)
-}
+// Rating is the decency rating of a submission.
+type Rating string
 
-func (rp *subtreeProcessor) processNode(n *html.Node) {
-	for _, h := range rp.tagHandlers {
-		if h.matches(n) {
-			if !h.process(n) {
-				return
-			}
-			break
-		}
-	}
+// Rating values
+const (
+	RatingGeneral Rating = "general"
+	RatingMature  Rating = "mature"
+	RatingAdult   Rating = "adult"
+)
 
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		rp.processNode(c)
-	}
-}
-
-func findAttribute(attrs []html.Attribute, name string) string {
-	for _, a := range attrs {
-		if a.Key == name {
-			return a.Val
-		}
-	}
-	return ""
-}
-
-func checkNodeTagNameAndID(n *html.Node, name, id string) bool {
-	return n.Type == html.ElementNode && n.Data == name && findAttribute(n.Attr, "id") == id
+func (s Submission) String() string {
+	return fmt.Sprintf("%s %s by %s (%s, %s)", s.PreviewURL, s.Title, s.User, s.Rating, s.ID)
 }

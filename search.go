@@ -50,8 +50,8 @@ func (c *Client) NewSearch(query string) *Search {
 }
 
 // GetPage returns the search results on the given page. The page numbering starts at 1.
-func (s *Search) GetPage(page int) ([]*SubmissionInfo, error) {
-	var subs []*SubmissionInfo
+func (s *Search) GetPage(page int) ([]*Submission, error) {
+	var subs []*Submission
 	log.WithFields(log.Fields{
 		"query": s.query,
 		"page":  page,
@@ -89,22 +89,23 @@ func (s *Search) GetPage(page int) ([]*SubmissionInfo, error) {
 	}
 	p.processNode(root)
 
-	for _, r := range srh.results {
-		subs = append(subs, s.c.newSubmissionInfo(r.id, r.user, r.title))
+	subs = srh.results
+	for i := range subs {
+		subs[i].c = s.c
 	}
 
 	return subs, nil
 }
 
 type searchResultsHandler struct {
-	results []*searchSubmissionHandler
+	results []*Submission
 }
 
-func (*searchResultsHandler) Matches(n *html.Node) bool {
+func (*searchResultsHandler) matches(n *html.Node) bool {
 	return checkNodeTagNameAndID(n, "section", "gallery-search-results")
 }
 
-func (srh *searchResultsHandler) Process(n *html.Node) bool {
+func (srh *searchResultsHandler) process(n *html.Node) bool {
 	srsh := &searchResultsSectionHandler{}
 	p := subtreeProcessor{
 		tagHandlers: []tagHandler{
@@ -117,38 +118,52 @@ func (srh *searchResultsHandler) Process(n *html.Node) bool {
 }
 
 type searchResultsSectionHandler struct {
-	results []*searchSubmissionHandler
+	results []*Submission
 }
 
-func (*searchResultsSectionHandler) Matches(n *html.Node) bool {
+func (*searchResultsSectionHandler) matches(n *html.Node) bool {
 	return n.Type == html.ElementNode && n.Data == "figure"
 }
 
-func (srsh *searchResultsSectionHandler) Process(n *html.Node) bool {
-	ssh := &searchSubmissionHandler{
-		id: strings.Replace(findAttribute(n.Attr, "id"), "sid-", "", 1),
+func (srsh *searchResultsSectionHandler) process(n *html.Node) bool {
+	classes := strings.Split(findAttribute(n.Attr, "class"), " ")
+	var rating string
+	for _, class := range classes {
+		if strings.HasPrefix(class, "r-") {
+			rating = class
+			break
+		}
 	}
+	ssh := &searchSubmissionHandler{}
+	ssph := &searchSubmissionPreviewHandler{}
 	p := subtreeProcessor{
 		tagHandlers: []tagHandler{
 			ssh,
+			ssph,
 		},
 	}
 	p.processNode(n)
-	srsh.results = append(srsh.results, ssh)
+
+	srsh.results = append(srsh.results, &Submission{
+		ID:         strings.Replace(findAttribute(n.Attr, "id"), "sid-", "", 1),
+		Rating:     Rating(strings.Replace(rating, "r-", "", 1)),
+		PreviewURL: ssph.url,
+		Title:      ssh.title,
+		User:       ssh.user,
+	})
 	return false
 }
 
 type searchSubmissionHandler struct {
-	id    string
 	title string
 	user  string
 }
 
-func (*searchSubmissionHandler) Matches(n *html.Node) bool {
+func (*searchSubmissionHandler) matches(n *html.Node) bool {
 	return n.Type == html.ElementNode && n.Data == "figcaption"
 }
 
-func (ssh *searchSubmissionHandler) Process(n *html.Node) bool {
+func (ssh *searchSubmissionHandler) process(n *html.Node) bool {
 	ssch := &searchSubmissionCaptionHandler{}
 	p := subtreeProcessor{
 		tagHandlers: []tagHandler{
@@ -161,16 +176,29 @@ func (ssh *searchSubmissionHandler) Process(n *html.Node) bool {
 	return false
 }
 
+type searchSubmissionPreviewHandler struct {
+	url string
+}
+
+func (*searchSubmissionPreviewHandler) matches(n *html.Node) bool {
+	return n.Type == html.ElementNode && n.Data == "img"
+}
+
+func (ssph *searchSubmissionPreviewHandler) process(n *html.Node) bool {
+	ssph.url = "https:" + findAttribute(n.Attr, "src")
+	return false
+}
+
 type searchSubmissionCaptionHandler struct {
 	title string
 	user  string
 }
 
-func (*searchSubmissionCaptionHandler) Matches(n *html.Node) bool {
+func (*searchSubmissionCaptionHandler) matches(n *html.Node) bool {
 	return n.Type == html.ElementNode && n.Data == "a"
 }
 
-func (ssch *searchSubmissionCaptionHandler) Process(n *html.Node) bool {
+func (ssch *searchSubmissionCaptionHandler) process(n *html.Node) bool {
 	href := findAttribute(n.Attr, "href")
 	val := findAttribute(n.Attr, "title")
 	if strings.HasPrefix(href, "/view/") {

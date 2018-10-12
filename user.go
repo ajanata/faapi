@@ -56,10 +56,10 @@ func (c *Client) NewUser(name string) *User {
 }
 
 // GetRecent retrieves the user's most recent submissions and journals.
-func (u *User) GetRecent() ([]*SubmissionInfo, []*JournalInfo, error) {
+func (u *User) GetRecent() ([]*Submission, []*Journal, error) {
 	log.WithField("user", u).Debug("Retrieving recent submissions and journals")
-	var subs []*SubmissionInfo
-	var journs []*JournalInfo
+	var subs []*Submission
+	var journs []*Journal
 
 	root, err := u.c.get("/user/" + u.name)
 	if err != nil {
@@ -83,26 +83,30 @@ func (u *User) GetRecent() ([]*SubmissionInfo, []*JournalInfo, error) {
 	}
 	rp.processNode(root)
 
-	subs = u.c.submissionsFromData(submissions.ids, scripts.data)
-	journs = u.c.journalsFromData(journals.ids, journals.titles)
+	subs = u.attachSubmissionData(submissions.subs, scripts.data)
+	journs = u.attachJournalData(journals.js)
 
 	return subs, journs, nil
 }
 
-func (c *Client) submissionsFromData(ids []string, data map[string]faSubmission) []*SubmissionInfo {
-	subs := make([]*SubmissionInfo, len(ids))
-	for i, id := range ids {
-		subs[i] = c.newSubmissionInfo(id, data[id].User, data[id].Title)
+func (u *User) attachSubmissionData(subs []*Submission, data map[string]faSubmission) []*Submission {
+	for i := range subs {
+		id := subs[i].ID
+		subs[i].c = u.c
+		subs[i].Rating = Rating(strings.Replace(data[id].Rating, "r-", "", 1))
+		subs[i].Title = data[id].Title
+		subs[i].User = data[id].User
 	}
+
 	return subs
 }
 
-func (c *Client) journalsFromData(ids, titles []string) []*JournalInfo {
-	journs := make([]*JournalInfo, len(ids))
-	for i, id := range ids {
-		journs[i] = c.newJournalInfo(id, titles[i])
+func (u *User) attachJournalData(js []*Journal) []*Journal {
+	for i := range js {
+		js[i].c = u.c
+		js[i].User = u.name
 	}
-	return journs
+	return js
 }
 
 type scriptHandler struct {
@@ -110,12 +114,12 @@ type scriptHandler struct {
 	data map[string]faSubmission
 }
 
-func (s *scriptHandler) Matches(n *html.Node) (matches bool) {
+func (s *scriptHandler) matches(n *html.Node) bool {
 	return n.Type == html.ElementNode && n.Data == "script" && n.FirstChild != nil &&
 		s.c.submissionDataRegexp.MatchString(n.FirstChild.Data)
 }
 
-func (s *scriptHandler) Process(n *html.Node) (recurseChildren bool) {
+func (s *scriptHandler) process(n *html.Node) bool {
 	raw := s.c.submissionDataRegexp.FindStringSubmatch(n.FirstChild.Data)[1]
 	data := make(map[string]faSubmission)
 	if err := json.Unmarshal([]byte(raw), &data); err != nil {
@@ -127,14 +131,14 @@ func (s *scriptHandler) Process(n *html.Node) (recurseChildren bool) {
 
 // submissionSectionHandler finds and extracts the recent submissionHandler section
 type submissionSectionHandler struct {
-	ids []string
+	subs []*Submission
 }
 
-func (*submissionSectionHandler) Matches(n *html.Node) bool {
+func (*submissionSectionHandler) matches(n *html.Node) bool {
 	return checkNodeTagNameAndID(n, "section", "gallery-latest-submissions")
 }
 
-func (sh *submissionSectionHandler) Process(n *html.Node) bool {
+func (sh *submissionSectionHandler) process(n *html.Node) bool {
 	s := &submissionHandler{}
 	p := subtreeProcessor{
 		tagHandlers: []tagHandler{
@@ -143,32 +147,54 @@ func (sh *submissionSectionHandler) Process(n *html.Node) bool {
 	}
 	p.processNode(n)
 
-	sh.ids = s.ids
+	sh.subs = s.subs
 	return false
 }
 
 // submissionHandler finds and extracts each submission
 type submissionHandler struct {
-	ids []string
+	subs []*Submission
 }
 
-func (*submissionHandler) Matches(n *html.Node) bool {
+func (*submissionHandler) matches(n *html.Node) bool {
 	return n.Type == html.ElementNode && n.Data == "figure"
 }
 
-func (s *submissionHandler) Process(n *html.Node) bool {
-	s.ids = append(s.ids, strings.Replace(findAttribute(n.Attr, "id"), "sid-", "", 1))
+func (s *submissionHandler) process(n *html.Node) bool {
+	si := &submissionImageHandler{}
+	p := subtreeProcessor{
+		tagHandlers: []tagHandler{
+			si,
+		},
+	}
+	p.processNode(n)
+	s.subs = append(s.subs, &Submission{
+		ID:         strings.Replace(findAttribute(n.Attr, "id"), "sid-", "", 1),
+		PreviewURL: si.url,
+	})
+	return false
+}
+
+type submissionImageHandler struct {
+	url string
+}
+
+func (*submissionImageHandler) matches(n *html.Node) bool {
+	return n.Type == html.ElementNode && n.Data == "img"
+}
+
+func (si *submissionImageHandler) process(n *html.Node) bool {
+	si.url = "https:" + findAttribute(n.Attr, "src")
 	return false
 }
 
 // journalHandler finds and retrieves journal links
 type journalHandler struct {
-	c      *Client
-	ids    []string
-	titles []string
+	c  *Client
+	js []*Journal
 }
 
-func (j *journalHandler) Matches(n *html.Node) bool {
+func (j *journalHandler) matches(n *html.Node) bool {
 	if n.Type == html.ElementNode && n.Data == "a" {
 		href := findAttribute(n.Attr, "href")
 		if j.c.journalRegexp.MatchString(href) {
@@ -183,14 +209,16 @@ func (j *journalHandler) Matches(n *html.Node) bool {
 	return false
 }
 
-func (j *journalHandler) Process(n *html.Node) bool {
+func (j *journalHandler) process(n *html.Node) bool {
 	href := findAttribute(n.Attr, "href")
 	id := j.c.journalRegexp.FindStringSubmatch(href)[1]
-	j.ids = append(j.ids, id)
-	j.titles = append(j.titles, n.FirstChild.Data)
+	j.js = append(j.js, &Journal{
+		ID:    id,
+		Title: n.FirstChild.Data,
+	})
 	return false
 }
 
 func (j *journalHandler) String() string {
-	return fmt.Sprintf("%+v", j.ids)
+	return fmt.Sprintf("%+v", j.js)
 }

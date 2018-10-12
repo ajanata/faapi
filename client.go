@@ -49,21 +49,6 @@ type Client struct {
 	submissionDataRegexp *regexp.Regexp
 }
 
-// SubmissionInfo is general information about a submission.
-type SubmissionInfo struct {
-	c     *Client
-	id    string
-	title string
-	user  string
-}
-
-// JournalInfo is general information about a journal.
-type JournalInfo struct {
-	c     *Client
-	id    string
-	title string
-}
-
 // New creates a new Client with the given configuration.
 func New(config Config) (*Client, error) {
 	journalRegexp, err := regexp.Compile(`^/journal/(\d+)/$`)
@@ -150,7 +135,7 @@ func (c *Client) get(uri string) (*html.Node, error) {
 }
 
 func (c *Client) post(uri string, values url.Values) (*html.Node, error) {
-	log.WithField("values", values.Encode()).Debug("POST parameters")
+	log.WithField("values", values).Debug("POST parameters")
 	req, err := c.newRequest(http.MethodPost, uri, strings.NewReader(values.Encode()))
 	if err != nil {
 		return nil, err
@@ -158,29 +143,4 @@ func (c *Client) post(uri string, values url.Values) (*html.Node, error) {
 
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	return c.do(req)
-}
-
-func (s SubmissionInfo) String() string {
-	return fmt.Sprintf("%s by %s (%s)", s.title, s.user, s.id)
-}
-
-func (c *Client) newSubmissionInfo(id, user, title string) *SubmissionInfo {
-	return &SubmissionInfo{
-		c:     c,
-		id:    strings.Replace(id, "sid-", "", 1),
-		title: title,
-		user:  user,
-	}
-}
-
-func (j JournalInfo) String() string {
-	return fmt.Sprintf("%s (%s)", j.title, j.id)
-}
-
-func (c *Client) newJournalInfo(id, title string) *JournalInfo {
-	return &JournalInfo{
-		c:     c,
-		id:    id,
-		title: title,
-	}
 }
