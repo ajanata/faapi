@@ -33,9 +33,11 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/html"
@@ -46,6 +48,7 @@ type Client struct {
 	http                 http.Client
 	config               Config
 	journalRegexp        *regexp.Regexp
+	rateLimiter          *time.Ticker
 	submissionDataRegexp *regexp.Regexp
 }
 
@@ -70,14 +73,41 @@ func New(config Config) (*Client, error) {
 		tr.Proxy = http.ProxyURL(purl)
 	}
 
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, err
+	}
+
+	url, err := url.Parse("https://www.furaffinity.net/")
+	if err != nil {
+		return nil, err
+	}
+	cookies := make([]*http.Cookie, len(config.Cookies))
+	for i, cookie := range config.Cookies {
+		cookies[i] = &http.Cookie{
+			Name:  cookie.Name,
+			Value: cookie.Value,
+		}
+	}
+	jar.SetCookies(url, cookies)
+
 	return &Client{
 		http: http.Client{
+			Jar:       jar,
+			Timeout:   15 * time.Second,
 			Transport: &tr,
 		},
 		config:               config,
 		journalRegexp:        journalRegexp,
+		rateLimiter:          time.NewTicker(config.RateLimit),
 		submissionDataRegexp: submissionDataRegexp,
 	}, nil
+}
+
+func (c *Client) Close() {
+	if c != nil && c.rateLimiter != nil {
+		c.rateLimiter.Stop()
+	}
 }
 
 func (c *Client) newRequest(method, uri string, body io.Reader) (*http.Request, error) {
@@ -95,6 +125,9 @@ func (c *Client) do(req *http.Request) (*html.Node, error) {
 		"url":    req.URL,
 		"method": req.Method,
 	}).Debug("Making request")
+
+	// wait for rate limiting
+	<-c.rateLimiter.C
 
 	res, err := c.http.Do(req)
 	if err != nil {

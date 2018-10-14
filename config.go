@@ -28,8 +28,19 @@
 
 package faapi
 
+import (
+	"time"
+)
+
 // Config is the configuration for the client.
 type Config struct {
+	Cookies   []Cookie
 	Proxy     string
+	RateLimit time.Duration
 	UserAgent string
+}
+
+type Cookie struct {
+	Name  string
+	Value string
 }

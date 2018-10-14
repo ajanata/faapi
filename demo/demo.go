@@ -29,6 +29,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/ajanata/faapi"
 	log "github.com/sirupsen/logrus"
 )
@@ -39,11 +41,13 @@ func main() {
 
 	c, err := faapi.New(faapi.Config{
 		Proxy:     "socks5://127.0.0.1:18080",
+		RateLimit: time.Second,
 		UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36",
 	})
 	if err != nil {
 		panic(err)
 	}
+	defer c.Close()
 
 	subs, journs, err := c.NewUser("dragoneer").GetRecent()
 	if err != nil {
