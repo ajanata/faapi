@@ -78,7 +78,7 @@ func New(config Config) (*Client, error) {
 		return nil, err
 	}
 
-	url, err := url.Parse("https://www.furaffinity.net/")
+	curl, err := url.Parse("https://www.furaffinity.net/")
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func New(config Config) (*Client, error) {
 			Value: cookie.Value,
 		}
 	}
-	jar.SetCookies(url, cookies)
+	jar.SetCookies(curl, cookies)
 
 	return &Client{
 		http: http.Client{
@@ -105,9 +105,7 @@ func New(config Config) (*Client, error) {
 }
 
 func (c *Client) Close() {
-	if c != nil && c.rateLimiter != nil {
-		c.rateLimiter.Stop()
-	}
+	c.rateLimiter.Stop()
 }
 
 func (c *Client) newRequest(method, uri string, body io.Reader) (*http.Request, error) {
