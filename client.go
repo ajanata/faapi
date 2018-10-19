@@ -29,6 +29,7 @@
 package faapi
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -41,6 +42,10 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/html"
+)
+
+var (
+	ErrNotLoggedIn = errors.New("not logged in")
 )
 
 // Client is a FurAffinity client.
@@ -174,4 +179,39 @@ func (c *Client) post(uri string, values url.Values) (*html.Node, error) {
 
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	return c.do(req)
+}
+
+// GetUsername makes a request to FA to verify that the provided cookies result in being logged in
+// by finding our username. Returns ErrNotLoggedIn if username could not be found.
+func (c *Client) GetUsername() (string, error) {
+	root, err := c.get("/search")
+	if err != nil {
+		return "", err
+	}
+
+	h := &myUsernameHandler{}
+	p := subtreeProcessor{
+		tagHandlers: []tagHandler{
+			h,
+		},
+	}
+	p.processNode(root)
+
+	if h.username == "" {
+		return "", ErrNotLoggedIn
+	}
+	return h.username, nil
+}
+
+type myUsernameHandler struct {
+	username string
+}
+
+func (*myUsernameHandler) matches(n *html.Node) bool {
+	return checkNodeTagNameAndID(n, "a", "my-username") && n.FirstChild != nil
+}
+
+func (h *myUsernameHandler) process(n *html.Node) bool {
+	h.username = n.FirstChild.Data
+	return false
 }

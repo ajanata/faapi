@@ -49,6 +49,16 @@ func main() {
 	}
 	defer c.Close()
 
+	username, err := c.GetUsername()
+	switch err {
+	case faapi.ErrNotLoggedIn:
+		log.Warn("Could not determine username")
+	case nil:
+		log.WithField("username", username).Info("Successfully logged in")
+	default:
+		panic(err)
+	}
+
 	subs, journs, err := c.NewUser("dragoneer").GetRecent()
 	if err != nil {
 		panic(err)
