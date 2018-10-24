@@ -73,4 +73,7 @@ func main() {
 		panic(err)
 	}
 	log.WithField("results", subs).Info("search results")
+
+	bb, err := subs[0].PreviewImage()
+	log.WithError(err).WithField("bytes", bb).Info("first result bytes")
 }

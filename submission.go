@@ -30,6 +30,8 @@ package faapi
 
 import (
 	"fmt"
+	"io/ioutil"
+	"net/http"
 )
 
 // Submission is an artwork submission.
@@ -54,4 +56,19 @@ const (
 
 func (s Submission) String() string {
 	return fmt.Sprintf("%s %s by %s (%s, %s)", s.PreviewURL, s.Title, s.User, s.Rating, s.ID)
+}
+
+func (s *Submission) PreviewImage() ([]byte, error) {
+	req, err := s.c.newRequest(http.MethodGet, s.PreviewURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := s.c.doRaw(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	return ioutil.ReadAll(res.Body)
 }

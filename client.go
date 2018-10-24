@@ -115,7 +115,10 @@ func (c *Client) Close() {
 
 func (c *Client) newRequest(method, uri string, body io.Reader) (*http.Request, error) {
 	log.WithField("uri", uri).Debug("Creating new request")
-	req, err := http.NewRequest(method, "https://www.furaffinity.net"+uri, body)
+	if !strings.HasPrefix(uri, "https://") {
+		uri = "https://www.furaffinity.net" + uri
+	}
+	req, err := http.NewRequest(method, uri, body)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +126,7 @@ func (c *Client) newRequest(method, uri string, body io.Reader) (*http.Request, 
 	return req, nil
 }
 
-func (c *Client) do(req *http.Request) (*html.Node, error) {
+func (c *Client) doRaw(req *http.Request) (*http.Response, error) {
 	log.WithFields(log.Fields{
 		"url":    req.URL,
 		"method": req.Method,
@@ -136,7 +139,6 @@ func (c *Client) do(req *http.Request) (*html.Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
 		bb, _ := ioutil.ReadAll(res.Body)
@@ -147,6 +149,16 @@ func (c *Client) do(req *http.Request) (*html.Node, error) {
 		}).Error("Unexpected HTTP response code")
 		return nil, fmt.Errorf("HTTP response %d not expected", res.StatusCode)
 	}
+
+	return res, nil
+}
+
+func (c *Client) do(req *http.Request) (*html.Node, error) {
+	res, err := c.doRaw(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
 
 	if cType := res.Header.Get("Content-Type"); !strings.HasPrefix(cType, "text/html") {
 		bb, _ := ioutil.ReadAll(res.Body)
