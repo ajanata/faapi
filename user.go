@@ -89,7 +89,7 @@ func (u *User) GetRecent() ([]*Submission, []*Journal, error) {
 	return subs, journs, nil
 }
 
-func (u *User) attachSubmissionData(subs []*Submission, data map[string]faSubmission) []*Submission {
+func (u *User) attachSubmissionData(subs []*Submission, data map[int64]faSubmission) []*Submission {
 	for i := range subs {
 		id := subs[i].ID
 		subs[i].c = u.c
@@ -111,7 +111,7 @@ func (u *User) attachJournalData(js []*Journal) []*Journal {
 
 type scriptHandler struct {
 	c    *Client
-	data map[string]faSubmission
+	data map[int64]faSubmission
 }
 
 func (s *scriptHandler) matches(n *html.Node) bool {
@@ -121,7 +121,7 @@ func (s *scriptHandler) matches(n *html.Node) bool {
 
 func (s *scriptHandler) process(n *html.Node) bool {
 	raw := s.c.submissionDataRegexp.FindStringSubmatch(n.FirstChild.Data)[1]
-	data := make(map[string]faSubmission)
+	data := make(map[int64]faSubmission)
 	if err := json.Unmarshal([]byte(raw), &data); err != nil {
 		log.WithError(err).Error("Unable to unmarshal submission JSON data")
 	}
@@ -169,7 +169,7 @@ func (s *submissionHandler) process(n *html.Node) bool {
 	}
 	p.processNode(n)
 	s.subs = append(s.subs, &Submission{
-		ID:         strings.Replace(findAttribute(n.Attr, "id"), "sid-", "", 1),
+		ID:         parseSubmissionID(findAttribute(n.Attr, "id")),
 		PreviewURL: si.url,
 	})
 	return false
@@ -213,7 +213,7 @@ func (j *journalHandler) process(n *html.Node) bool {
 	href := findAttribute(n.Attr, "href")
 	id := j.c.journalRegexp.FindStringSubmatch(href)[1]
 	j.js = append(j.js, &Journal{
-		ID:    id,
+		ID:    parseSubmissionID(id),
 		Title: n.FirstChild.Data,
 	})
 	return false

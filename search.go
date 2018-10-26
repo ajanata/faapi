@@ -145,7 +145,7 @@ func (srsh *searchResultsSectionHandler) process(n *html.Node) bool {
 	p.processNode(n)
 
 	srsh.results = append(srsh.results, &Submission{
-		ID:         strings.Replace(findAttribute(n.Attr, "id"), "sid-", "", 1),
+		ID:         parseSubmissionID(findAttribute(n.Attr, "id")),
 		Rating:     Rating(strings.Replace(rating, "r-", "", 1)),
 		PreviewURL: ssph.url,
 		Title:      ssh.title,

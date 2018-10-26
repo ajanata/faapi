@@ -32,16 +32,21 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strconv"
+	"strings"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // Submission is an artwork submission.
 type Submission struct {
-	c          *Client
-	ID         string
-	PreviewURL string
-	Rating     Rating
-	Title      string
-	User       string
+	c            *Client
+	ID           int64
+	PreviewURL   string
+	Rating       Rating
+	Title        string
+	User         string
+	previewImage *[]byte
 }
 
 // Rating is the decency rating of a submission.
@@ -55,10 +60,14 @@ const (
 )
 
 func (s Submission) String() string {
-	return fmt.Sprintf("%s %s by %s (%s, %s)", s.PreviewURL, s.Title, s.User, s.Rating, s.ID)
+	return fmt.Sprintf("%s %s by %s (%s, %d)", s.PreviewURL, s.Title, s.User, s.Rating, s.ID)
 }
 
 func (s *Submission) PreviewImage() ([]byte, error) {
+	if s.previewImage != nil {
+		return *s.previewImage, nil
+	}
+
 	req, err := s.c.newRequest(http.MethodGet, s.PreviewURL, nil)
 	if err != nil {
 		return nil, err
@@ -70,5 +79,19 @@ func (s *Submission) PreviewImage() ([]byte, error) {
 	}
 	defer res.Body.Close()
 
-	return ioutil.ReadAll(res.Body)
+	bb, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	s.previewImage = &bb
+	return bb, nil
+}
+
+func parseSubmissionID(str string) int64 {
+	id, err := strconv.ParseInt(strings.Replace(str, "sid-", "", 1), 10, 64)
+	// if this ever happens, everything will be completely broken, so returning 0 is... fine?
+	if err != nil {
+		log.WithError(err).Error("Unable to parse submission ID")
+	}
+	return id
 }

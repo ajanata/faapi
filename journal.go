@@ -35,7 +35,7 @@ import (
 // Journal is a journal entry.
 type Journal struct {
 	c     *Client
-	ID    string
+	ID    int64
 	Title string
 	User  string
 }
@@ -45,5 +45,5 @@ func (j Journal) String() string {
 }
 
 func (j *Journal) URL() string {
-	return fmt.Sprintf("https://www.furaffinity.net/journal/%s/", j.ID)
+	return fmt.Sprintf("https://www.furaffinity.net/journal/%d/", j.ID)
 }
