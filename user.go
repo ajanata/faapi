@@ -31,22 +31,30 @@ package faapi
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/html"
 )
 
-type User struct {
-	c    *Client
-	name string
-}
+type (
+	User struct {
+		c    *Client
+		name string
+	}
 
-type faSubmission struct {
-	Rating string `json:"icon_rating"`
-	Title  string `json:"title"`
-	User   string `json:"username"`
-}
+	faSubmission struct {
+		Rating string `json:"icon_rating"`
+		Title  string `json:"title"`
+		User   string `json:"username"`
+	}
+)
+
+var (
+	journalRegexp        = regexp.MustCompile(`^/journal/(\d+)/$`)
+	submissionDataRegexp = regexp.MustCompile(`var submission_data = (.*}});`)
+)
 
 func (c *Client) NewUser(name string) *User {
 	return &User{
@@ -116,11 +124,11 @@ type scriptHandler struct {
 
 func (s *scriptHandler) matches(n *html.Node) bool {
 	return n.Type == html.ElementNode && n.Data == "script" && n.FirstChild != nil &&
-		s.c.submissionDataRegexp.MatchString(n.FirstChild.Data)
+		submissionDataRegexp.MatchString(n.FirstChild.Data)
 }
 
 func (s *scriptHandler) process(n *html.Node) bool {
-	raw := s.c.submissionDataRegexp.FindStringSubmatch(n.FirstChild.Data)[1]
+	raw := submissionDataRegexp.FindStringSubmatch(n.FirstChild.Data)[1]
 	data := make(map[int64]faSubmission)
 	if err := json.Unmarshal([]byte(raw), &data); err != nil {
 		log.WithError(err).Error("Unable to unmarshal submission JSON data")
@@ -197,7 +205,7 @@ type journalHandler struct {
 func (j *journalHandler) matches(n *html.Node) bool {
 	if n.Type == html.ElementNode && n.Data == "a" {
 		href := findAttribute(n.Attr, "href")
-		if j.c.journalRegexp.MatchString(href) {
+		if journalRegexp.MatchString(href) {
 			linkText := n.FirstChild
 			// Exclude other links that lead to the journal that don't include its title.
 			if linkText != nil && linkText.Type == html.TextNode {
@@ -211,7 +219,7 @@ func (j *journalHandler) matches(n *html.Node) bool {
 
 func (j *journalHandler) process(n *html.Node) bool {
 	href := findAttribute(n.Attr, "href")
-	id := j.c.journalRegexp.FindStringSubmatch(href)[1]
+	id := journalRegexp.FindStringSubmatch(href)[1]
 	j.js = append(j.js, &Journal{
 		ID:    parseSubmissionID(id),
 		Title: n.FirstChild.Data,

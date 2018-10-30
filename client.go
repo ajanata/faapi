@@ -36,7 +36,6 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
@@ -50,25 +49,13 @@ var (
 
 // Client is a FurAffinity client.
 type Client struct {
-	http                 http.Client
-	config               Config
-	journalRegexp        *regexp.Regexp
-	rateLimiter          *time.Ticker
-	submissionDataRegexp *regexp.Regexp
+	http        http.Client
+	config      Config
+	rateLimiter *time.Ticker
 }
 
 // New creates a new Client with the given configuration.
 func New(config Config) (*Client, error) {
-	journalRegexp, err := regexp.Compile(`^/journal/(\d+)/$`)
-	if err != nil {
-		return nil, err
-	}
-
-	submissionDataRegexp, err := regexp.Compile(`var submission_data = (.*}});`)
-	if err != nil {
-		return nil, err
-	}
-
 	tr := http.Transport{}
 	if config.Proxy != "" {
 		purl, err := url.Parse(config.Proxy)
@@ -102,10 +89,8 @@ func New(config Config) (*Client, error) {
 			Timeout:   15 * time.Second,
 			Transport: &tr,
 		},
-		config:               config,
-		journalRegexp:        journalRegexp,
-		rateLimiter:          time.NewTicker(config.RateLimit),
-		submissionDataRegexp: submissionDataRegexp,
+		config:      config,
+		rateLimiter: time.NewTicker(config.RateLimit),
 	}, nil
 }
 

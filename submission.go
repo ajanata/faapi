@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -59,6 +60,14 @@ const (
 	RatingAdult   Rating = "adult"
 )
 
+const (
+	previewURLFormat = "https://t.facdn.net/%s@400-%s.%s"
+)
+
+var (
+	previewSizeRegexp = regexp.MustCompile(`^https://t.facdn.net/(\d+)@(\d+)-(\d+)\.([a-zA-Z]+)$`)
+)
+
 func (s Submission) String() string {
 	return fmt.Sprintf("%s %s by %s (%s, %d)", s.PreviewURL, s.Title, s.User, s.Rating, s.ID)
 }
@@ -67,8 +76,36 @@ func (s *Submission) PreviewImage() ([]byte, error) {
 	if s.previewImage != nil {
 		return *s.previewImage, nil
 	}
+	logger := log.WithField("submission", s)
 
-	req, err := s.c.newRequest(http.MethodGet, s.PreviewURL, nil)
+	// try to get the largest preview available
+	parts := previewSizeRegexp.FindStringSubmatch(s.PreviewURL)
+	if len(parts) == 5 {
+		// don't bother for preview URLs already at the large size
+		if parts[2] != "400" {
+			url := fmt.Sprintf(previewURLFormat, parts[1], parts[3], parts[4])
+			bb, err := s.getImage(url)
+			if err != nil {
+				logger.WithError(err).Warn("Unable to retrieve large-size preview; falling back to provided size")
+			} else {
+				s.previewImage = &bb
+				return bb, nil
+			}
+		}
+	} else {
+		logger.Warn("Regexp failed to parse preview URL")
+	}
+
+	bb, err := s.getImage(s.PreviewURL)
+	if err != nil {
+		return nil, err
+	}
+	s.previewImage = &bb
+	return bb, nil
+}
+
+func (s *Submission) getImage(url string) ([]byte, error) {
+	req, err := s.c.newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +120,6 @@ func (s *Submission) PreviewImage() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.previewImage = &bb
 	return bb, nil
 }
 
