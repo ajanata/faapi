@@ -39,6 +39,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PuerkitoBio/rehttp"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/html"
 )
@@ -56,13 +57,26 @@ type Client struct {
 
 // New creates a new Client with the given configuration.
 func New(config Config) (*Client, error) {
-	tr := http.Transport{}
+	var tr http.RoundTripper = &http.Transport{}
+
 	if config.Proxy != "" {
 		purl, err := url.Parse(config.Proxy)
 		if err != nil {
 			return nil, err
 		}
-		tr.Proxy = http.ProxyURL(purl)
+
+		tr = &http.Transport{
+			Proxy: http.ProxyURL(purl),
+		}
+	}
+
+	if config.RetryLimit > 0 {
+		if config.RetryDelay <= 0 {
+			config.RetryDelay = 10 * time.Second
+		}
+		tr = rehttp.NewTransport(tr,
+			rehttp.RetryAll(rehttp.RetryMaxRetries(config.RetryLimit), rehttp.RetryTemporaryErr()),
+			rehttp.ConstDelay(config.RetryDelay))
 	}
 
 	jar, err := cookiejar.New(nil)
@@ -83,11 +97,15 @@ func New(config Config) (*Client, error) {
 	}
 	jar.SetCookies(curl, cookies)
 
+	if config.Timeout == 0 {
+		config.Timeout = 15 * time.Second
+	}
+
 	return &Client{
 		http: http.Client{
 			Jar:       jar,
-			Timeout:   15 * time.Second,
-			Transport: &tr,
+			Timeout:   config.Timeout,
+			Transport: tr,
 		},
 		config:      config,
 		rateLimiter: time.NewTicker(config.RateLimit),
@@ -131,7 +149,7 @@ func (c *Client) doRaw(req *http.Request) (*http.Response, error) {
 			"url":  req.URL,
 			"code": res.StatusCode,
 			"body": string(bb),
-		}).Error("Unexpected HTTP response code")
+		}).Debug("Unexpected HTTP response code")
 		return nil, fmt.Errorf("HTTP response %d not expected", res.StatusCode)
 	}
 
@@ -151,7 +169,7 @@ func (c *Client) do(req *http.Request) (*html.Node, error) {
 			"url":          req.URL,
 			"content-type": cType,
 			"body":         string(bb),
-		}).Error("Unexpected content-type")
+		}).Debug("Unexpected content-type")
 		return nil, fmt.Errorf("response content-type %s not expected", cType)
 	}
 

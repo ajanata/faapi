@@ -37,6 +37,12 @@ type Config struct {
 	Cookies   []Cookie
 	Proxy     string
 	RateLimit time.Duration
+	// RequestTimeout is the timeout for a single attempt at the request.
+	RequestTimeout time.Duration
+	RetryDelay     time.Duration
+	RetryLimit     int
+	// Timeout is the timeout on the entire request, including retries.
+	Timeout   time.Duration
 	UserAgent string
 }
 
