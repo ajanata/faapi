@@ -34,8 +34,10 @@ import (
 
 // Config is the configuration for the client.
 type Config struct {
-	Cookies   []Cookie
-	Proxy     string
+	Cookies []Cookie
+	Proxy   string
+	// RateLimit is how often requests to furaffinity.net itself are allowed.
+	// Requests to e.g. facdn.net to download images are not affected.
 	RateLimit time.Duration
 	// RequestTimeout is the timeout for a single attempt at the request.
 	RequestTimeout time.Duration

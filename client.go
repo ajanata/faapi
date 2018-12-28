@@ -135,8 +135,10 @@ func (c *Client) doRaw(req *http.Request) (*http.Response, error) {
 		"method": req.Method,
 	}).Debug("Making request")
 
-	// wait for rate limiting
-	<-c.rateLimiter.C
+	if req.URL.Host == "www.furaffinity.net" {
+		// wait for rate limiting
+		<-c.rateLimiter.C
+	}
 
 	res, err := c.http.Do(req)
 	if err != nil {
