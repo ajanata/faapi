@@ -1,6 +1,6 @@
 /*
  *
- * Copyright (c) 2018, Andy Janata
+ * Copyright (c) 2018-2019, Andy Janata
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
@@ -30,6 +30,7 @@ package faapi
 
 import (
 	"net/url"
+	"strconv"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -59,7 +60,7 @@ func (s *Search) GetPage(page int) ([]*Submission, error) {
 
 	params := url.Values{}
 	params.Set("q", s.query)
-	params.Set("page", string(page))
+	params.Set("page", strconv.Itoa(page))
 	params.Set("perpage", "72")
 	params.Set("order-by", "date")
 	params.Set("order-direction", "desc")
