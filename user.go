@@ -216,7 +216,9 @@ func (sh *submissionSectionHandler) matches(n *html.Node) bool {
 }
 
 func (sh *submissionSectionHandler) process(n *html.Node) bool {
-	s := &submissionHandler{}
+	s := &submissionHandler{
+		c: sh.c,
+	}
 	p := subtreeProcessor{
 		tagHandlers: []tagHandler{
 			s,
