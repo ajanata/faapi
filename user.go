@@ -45,6 +45,7 @@ type (
 	}
 
 	faSubmission struct {
+		// user profile pages only provide the rating in the JSON
 		Rating string `json:"icon_rating"`
 		Title  string `json:"title"`
 		User   string `json:"username"`
@@ -53,6 +54,7 @@ type (
 
 var (
 	journalRegexp        = regexp.MustCompile(`^/journal/(\d+)/$`)
+	galleryDataRegexp    = regexp.MustCompile(`var descriptions = (.*}});`)
 	submissionDataRegexp = regexp.MustCompile(`var submission_data = (.*}});`)
 )
 
@@ -75,12 +77,15 @@ func (u *User) GetRecent() ([]*Submission, []*Journal, error) {
 		return subs, journs, err
 	}
 
-	submissions := &submissionSectionHandler{}
+	submissions := &submissionSectionHandler{
+		c:         u.c,
+		sectionID: "gallery-latest-submissions",
+	}
 	journals := &journalHandler{
 		c: u.c,
 	}
 	scripts := &scriptHandler{
-		c: u.c,
+		regexp: submissionDataRegexp,
 	}
 
 	rp := &subtreeProcessor{
@@ -125,11 +130,45 @@ func (u *User) GetJournals(page uint) ([]*Journal, error) {
 	return journs, nil
 }
 
+// GetSubmissions retrieves the specified page of the user's gallery. Page numbering starts at 1.
+// NOTE: Rating information is currently not provided on the submissions.
+func (u *User) GetSubmissions(page uint) ([]*Submission, error) {
+	if page == 0 {
+		page = 1
+	}
+	log.WithField("user", u).WithField("page", page).Debug("Retrieving submissions")
+
+	var subs []*Submission
+	root, err := u.c.get(fmt.Sprintf("/gallery/%s/%d/", u.name, page))
+	if err != nil {
+		return subs, err
+	}
+
+	submissions := &submissionSectionHandler{
+		c:         u.c,
+		sectionID: "gallery-gallery",
+	}
+	scripts := &scriptHandler{
+		regexp: galleryDataRegexp,
+	}
+	rp := &subtreeProcessor{
+		tagHandlers: []tagHandler{
+			submissions,
+			scripts,
+		},
+	}
+	rp.processNode(root)
+
+	subs = u.attachSubmissionData(submissions.subs, scripts.data)
+	return subs, nil
+}
+
 func (u *User) attachSubmissionData(subs []*Submission, data map[int64]faSubmission) []*Submission {
 	for i := range subs {
 		id := subs[i].ID
-		subs[i].c = u.c
-		subs[i].Rating = Rating(strings.Replace(data[id].Rating, "r-", "", 1))
+		if data[id].Rating != "" {
+			subs[i].Rating = Rating(strings.Replace(data[id].Rating, "r-", "", 1))
+		}
 		subs[i].Title = data[id].Title
 		subs[i].User = data[id].User
 	}
@@ -146,17 +185,17 @@ func (u *User) attachJournalData(js []*Journal) []*Journal {
 }
 
 type scriptHandler struct {
-	c    *Client
-	data map[int64]faSubmission
+	data   map[int64]faSubmission
+	regexp *regexp.Regexp
 }
 
 func (s *scriptHandler) matches(n *html.Node) bool {
 	return n.Type == html.ElementNode && n.Data == "script" && n.FirstChild != nil &&
-		submissionDataRegexp.MatchString(n.FirstChild.Data)
+		s.regexp.MatchString(n.FirstChild.Data)
 }
 
 func (s *scriptHandler) process(n *html.Node) bool {
-	raw := submissionDataRegexp.FindStringSubmatch(n.FirstChild.Data)[1]
+	raw := s.regexp.FindStringSubmatch(n.FirstChild.Data)[1]
 	data := make(map[int64]faSubmission)
 	if err := json.Unmarshal([]byte(raw), &data); err != nil {
 		log.WithError(err).Error("Unable to unmarshal submission JSON data")
@@ -167,11 +206,13 @@ func (s *scriptHandler) process(n *html.Node) bool {
 
 // submissionSectionHandler finds and extracts the recent submissionHandler section
 type submissionSectionHandler struct {
-	subs []*Submission
+	c         *Client
+	sectionID string
+	subs      []*Submission
 }
 
-func (*submissionSectionHandler) matches(n *html.Node) bool {
-	return checkNodeTagNameAndID(n, "section", "gallery-latest-submissions")
+func (sh *submissionSectionHandler) matches(n *html.Node) bool {
+	return checkNodeTagNameAndID(n, "section", sh.sectionID)
 }
 
 func (sh *submissionSectionHandler) process(n *html.Node) bool {
@@ -189,6 +230,7 @@ func (sh *submissionSectionHandler) process(n *html.Node) bool {
 
 // submissionHandler finds and extracts each submission
 type submissionHandler struct {
+	c    *Client
 	subs []*Submission
 }
 
@@ -205,7 +247,10 @@ func (s *submissionHandler) process(n *html.Node) bool {
 	}
 	p.processNode(n)
 	s.subs = append(s.subs, &Submission{
-		ID:         parseSubmissionID(findAttribute(n.Attr, "id")),
+		c:  s.c,
+		ID: parseSubmissionID(findAttribute(n.Attr, "id")),
+		// gallery pages only provide the rating as a class attribute
+		Rating:     Rating(strings.Replace(strings.Split(findAttribute(n.Attr, "class"), " ")[0], "r-", "", 1)),
 		PreviewURL: si.url,
 	})
 	return false

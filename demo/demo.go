@@ -81,6 +81,18 @@ func main() {
 	}
 	log.WithField("journals", journs).Info("journal page 2")
 
+	subs, err = u.GetSubmissions(1)
+	if err != nil {
+		panic(err)
+	}
+	log.WithField("submissions", subs).Info("submissions page 1")
+
+	subs, err = u.GetSubmissions(2)
+	if err != nil {
+		panic(err)
+	}
+	log.WithField("submissions", subs).Info("submissions page 2")
+
 	subs, err = c.NewSearch("@keywords ych").GetPage(1)
 	if err != nil {
 		panic(err)
@@ -88,5 +100,20 @@ func main() {
 	log.WithField("results", subs).Info("search results")
 
 	bb, err := subs[0].PreviewImage()
-	log.WithError(err).WithField("bytes", bb).Info("first result bytes")
+	if err != nil {
+		panic(err)
+	}
+	log.WithField("bytes", bb).Info("first result bytes")
+
+	details, err := subs[0].Details()
+	if err != nil {
+		panic(err)
+	}
+	log.WithField("details", details).Info("first result details")
+
+	bb, err = details.Download()
+	if err != nil {
+		panic(err)
+	}
+	log.WithField("len", len(bb)).Info("first result download length")
 }

@@ -178,6 +178,25 @@ func (c *Client) do(req *http.Request) (*html.Node, error) {
 	return html.Parse(res.Body)
 }
 
+func (c *Client) getRaw(url string) ([]byte, error) {
+	req, err := c.newRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := c.doRaw(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	bb, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	return bb, nil
+}
+
 func (c *Client) get(uri string) (*html.Node, error) {
 	req, err := c.newRequest(http.MethodGet, uri, nil)
 	if err != nil {

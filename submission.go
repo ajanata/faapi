@@ -30,13 +30,12 @@ package faapi
 
 import (
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/net/html"
 )
 
 // Submission is an artwork submission.
@@ -48,6 +47,15 @@ type Submission struct {
 	Title        string
 	User         string
 	previewImage *[]byte
+}
+
+// SubmissionDetails are the details of a specific submission.
+// TODO add more stuff here
+type SubmissionDetails struct {
+	c *Client
+	// The blob linked to by DownloadURL. NOT the full size image on the page (text/music submissions)
+	download    *[]byte
+	DownloadURL string
 }
 
 // Rating is the decency rating of a submission.
@@ -84,7 +92,7 @@ func (s *Submission) PreviewImage() ([]byte, error) {
 		// don't bother for preview URLs already at the large size
 		if parts[2] != "400" {
 			url := fmt.Sprintf(previewURLFormat, parts[1], parts[3], parts[4])
-			bb, err := s.getImage(url)
+			bb, err := s.c.getRaw(url)
 			if err != nil {
 				logger.WithError(err).Warn("Unable to retrieve large-size preview; falling back to provided size")
 			} else {
@@ -96,30 +104,11 @@ func (s *Submission) PreviewImage() ([]byte, error) {
 		logger.Warn("Regexp failed to parse preview URL")
 	}
 
-	bb, err := s.getImage(s.PreviewURL)
+	bb, err := s.c.getRaw(s.PreviewURL)
 	if err != nil {
 		return nil, err
 	}
 	s.previewImage = &bb
-	return bb, nil
-}
-
-func (s *Submission) getImage(url string) ([]byte, error) {
-	req, err := s.c.newRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	res, err := s.c.doRaw(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-
-	bb, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return nil, err
-	}
 	return bb, nil
 }
 
@@ -130,4 +119,56 @@ func parseSubmissionID(str string) int64 {
 		log.WithError(err).Error("Unable to parse submission ID")
 	}
 	return id
+}
+
+func (c *Client) GetSubmissionDetails(id int64) (*SubmissionDetails, error) {
+	root, err := c.get(fmt.Sprintf("/view/%d/", id))
+	if err != nil {
+		return nil, err
+	}
+
+	dh := &downloadHandler{}
+	rp := &subtreeProcessor{
+		tagHandlers: []tagHandler{
+			dh,
+		},
+	}
+	rp.processNode(root)
+
+	return &SubmissionDetails{
+		c:           c,
+		DownloadURL: "https:" + dh.url,
+	}, nil
+}
+
+func (s *Submission) Details() (*SubmissionDetails, error) {
+	return s.c.GetSubmissionDetails(s.ID)
+}
+
+func (sd *SubmissionDetails) Download() ([]byte, error) {
+	if sd.download != nil {
+		return *sd.download, nil
+	}
+
+	bb, err := sd.c.getRaw(sd.DownloadURL)
+	if err != nil {
+		return nil, err
+	}
+	sd.download = &bb
+	return bb, nil
+}
+
+type downloadHandler struct {
+	url string
+}
+
+func (*downloadHandler) matches(n *html.Node) bool {
+	// need to check the child node to know if this is the download link
+	return n.Type == html.ElementNode && n.Data == "a" &&
+		n.FirstChild != nil && n.FirstChild.Type == html.TextNode && n.FirstChild.Data == "Download"
+}
+
+func (dh *downloadHandler) process(n *html.Node) bool {
+	dh.url = findAttribute(n.Attr, "href")
+	return false
 }
