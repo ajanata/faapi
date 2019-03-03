@@ -1,6 +1,6 @@
 /*
  *
- * Copyright (c) 2018, Andy Janata
+ * Copyright (c) 2018-2019, Andy Janata
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
@@ -63,7 +63,8 @@ func (c *Client) NewUser(name string) *User {
 	}
 }
 
-// GetRecent retrieves the user's most recent submissions and journals.
+// GetRecent retrieves the user's most recent submissions and journal.
+// It obtains the data from the user's profile page, so the number of results is limited.
 func (u *User) GetRecent() ([]*Submission, []*Journal, error) {
 	log.WithField("user", u).Debug("Retrieving recent submissions and journals")
 	var subs []*Submission
@@ -95,6 +96,33 @@ func (u *User) GetRecent() ([]*Submission, []*Journal, error) {
 	journs = u.attachJournalData(journals.js)
 
 	return subs, journs, nil
+}
+
+// GetJournals retrieves the specified page of the user's journal. Page numbering starts at 1.
+func (u *User) GetJournals(page uint) ([]*Journal, error) {
+	if page == 0 {
+		page = 1
+	}
+	log.WithField("user", u).WithField("page", page).Debug("Retrieving journals")
+
+	var journs []*Journal
+	root, err := u.c.get(fmt.Sprintf("/journals/%s/%d/", u.name, page))
+	if err != nil {
+		return journs, err
+	}
+
+	journals := &journalHandler{
+		c: u.c,
+	}
+	rp := &subtreeProcessor{
+		tagHandlers: []tagHandler{
+			journals,
+		},
+	}
+	rp.processNode(root)
+	journs = u.attachJournalData(journals.js)
+
+	return journs, nil
 }
 
 func (u *User) attachSubmissionData(subs []*Submission, data map[int64]faSubmission) []*Submission {

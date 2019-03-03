@@ -1,6 +1,6 @@
 /*
  *
- * Copyright (c) 2018, Andy Janata
+ * Copyright (c) 2018-2019, Andy Janata
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
@@ -59,7 +59,8 @@ func main() {
 		panic(err)
 	}
 
-	subs, journs, err := c.NewUser("dragoneer").GetRecent()
+	u := c.NewUser("dragoneer")
+	subs, journs, err := u.GetRecent()
 	if err != nil {
 		panic(err)
 	}
@@ -67,6 +68,18 @@ func main() {
 		"submissions": subs,
 		"journals":    journs,
 	}).Info("user recents")
+
+	journs, err = u.GetJournals(1)
+	if err != nil {
+		panic(err)
+	}
+	log.WithField("journals", journs).Info("journal page 1")
+
+	journs, err = u.GetJournals(2)
+	if err != nil {
+		panic(err)
+	}
+	log.WithField("journals", journs).Info("journal page 2")
 
 	subs, err = c.NewSearch("@keywords ych").GetPage(1)
 	if err != nil {
