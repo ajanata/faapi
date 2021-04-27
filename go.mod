@@ -1,5 +1,7 @@
 module github.com/ajanata/faapi
 
+go 1.16
+
 require (
 	github.com/PuerkitoBio/rehttp v0.0.0-20180310210549-11cf6ea5d3e9
 	github.com/sirupsen/logrus v1.2.0

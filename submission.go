@@ -69,11 +69,11 @@ const (
 )
 
 const (
-	previewURLFormat = "https://t.facdn.net/%s@400-%s.%s"
+	previewURLFormat = "https://t.furaffinity.net/%s@800-%s.%s"
 )
 
 var (
-	previewSizeRegexp = regexp.MustCompile(`^https://t.facdn.net/(\d+)@(\d+)-(\d+)\.([a-zA-Z]+)$`)
+	previewSizeRegexp = regexp.MustCompile(`^https://t.furaffinity.net/(\d+)@(\d+)-(\d+)\.([a-zA-Z]+)$`)
 )
 
 func (s Submission) String() string {
@@ -90,7 +90,7 @@ func (s *Submission) PreviewImage() ([]byte, error) {
 	parts := previewSizeRegexp.FindStringSubmatch(s.PreviewURL)
 	if len(parts) == 5 {
 		// don't bother for preview URLs already at the large size
-		if parts[2] != "400" {
+		if parts[2] != "800" {
 			url := fmt.Sprintf(previewURLFormat, parts[1], parts[3], parts[4])
 			bb, err := s.c.getRaw(url)
 			if err != nil {
