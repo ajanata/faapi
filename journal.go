@@ -30,20 +30,79 @@ package faapi
 
 import (
 	"fmt"
+	"strings"
+
+	"golang.org/x/net/html"
 )
 
 // Journal is a journal entry.
 type Journal struct {
-	c     *Client
-	ID    int64
-	Title string
-	User  string
+	c       *Client
+	ID      int64
+	Title   string
+	User    string
+	content *string
 }
 
-func (j Journal) String() string {
+func (j *Journal) String() string {
 	return fmt.Sprintf("%s (%s)", j.Title, j.ID)
 }
 
 func (j *Journal) URL() string {
 	return fmt.Sprintf("https://www.furaffinity.net/journal/%d/", j.ID)
+}
+
+func (j *Journal) Content() (string, error) {
+	if j.content != nil {
+		return *j.content, nil
+	}
+
+	root, err := j.c.get(j.URL())
+	if err != nil {
+		return "", err
+	}
+
+	jch := &journalContentHandler{}
+	jdh := &journalDateHandler{}
+	rp := &subtreeProcessor{
+		tagHandlers: []tagHandler{
+			jch,
+			jdh,
+		},
+	}
+	rp.processNode(root)
+
+	s := jdh.text + "\n\n" + jch.text
+	j.content = &s
+	return s, nil
+}
+
+type journalContentHandler struct {
+	text string
+}
+
+func (*journalContentHandler) matches(n *html.Node) bool {
+	return checkNodeTagNameAndClass(n, "div", "journal-body")
+}
+
+func (dh *journalContentHandler) process(n *html.Node) bool {
+	s := strings.ReplaceAll(getText(n), "  ", " ")
+	s = strings.ReplaceAll(s, " ", " ")
+	s = strings.ReplaceAll(s, "\t", " ")
+	s = strings.Trim(s, " \t \r\n")
+	dh.text = s
+	return true
+}
+
+type journalDateHandler struct {
+	text string
+}
+
+func (*journalDateHandler) matches(n *html.Node) bool {
+	return checkNodeTagNameAndClass(n, "span", "popup_date")
+}
+
+func (dh *journalDateHandler) process(n *html.Node) bool {
+	dh.text = n.FirstChild.Data
+	return true
 }

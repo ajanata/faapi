@@ -56,6 +56,8 @@ type SubmissionDetails struct {
 	// The blob linked to by DownloadURL. NOT the full size image on the page (text/music submissions)
 	download    *[]byte
 	DownloadURL string
+	Description string
+	Stats       string
 }
 
 // Rating is the decency rating of a submission.
@@ -76,7 +78,7 @@ var (
 	previewSizeRegexp = regexp.MustCompile(`^https://t.furaffinity.net/(\d+)@(\d+)-(\d+)\.([a-zA-Z]+)$`)
 )
 
-func (s Submission) String() string {
+func (s *Submission) String() string {
 	return fmt.Sprintf("%s %s by %s (%s, %d)", s.PreviewURL, s.Title, s.User, s.Rating, s.ID)
 }
 
@@ -127,17 +129,23 @@ func (c *Client) GetSubmissionDetails(id int64) (*SubmissionDetails, error) {
 		return nil, err
 	}
 
-	dh := &downloadHandler{}
+	down := &downloadHandler{}
+	desc := &descriptionHandler{}
+	stats := &statsHandler{}
 	rp := &subtreeProcessor{
 		tagHandlers: []tagHandler{
-			dh,
+			down,
+			desc,
+			stats,
 		},
 	}
 	rp.processNode(root)
 
 	return &SubmissionDetails{
 		c:           c,
-		DownloadURL: "https:" + dh.url,
+		DownloadURL: "https:" + down.url,
+		Description: desc.text,
+		Stats:       stats.stats,
 	}, nil
 }
 
@@ -171,4 +179,112 @@ func (*downloadHandler) matches(n *html.Node) bool {
 func (dh *downloadHandler) process(n *html.Node) bool {
 	dh.url = findAttribute(n.Attr, "href")
 	return false
+}
+
+type descriptionHandler struct {
+	text string
+}
+
+func (*descriptionHandler) matches(n *html.Node) bool {
+	return checkNodeTagNameAndID(n, "div", "page-submission")
+}
+
+func (dh *descriptionHandler) process(n *html.Node) bool {
+	// the only identifiable node is the root div for the page submission,
+	// so we have to dive really deep to get the data we want:
+
+	// div page-submission
+	//  table
+	//   tbody
+	//    tr
+	//     td
+	//      table
+	//       tbody
+	//        tr #2
+	//         td
+	//          table (after junk)
+	//           tbody
+	//            tr #2
+	//             td
+
+	n = findChild(n, "table", 0)
+	if n == nil {
+		return false
+	}
+
+	n = findChild(n, "tbody", 0)
+	if n == nil {
+		return false
+	}
+
+	n = findChild(n, "tr", 0)
+	if n == nil {
+		return false
+	}
+
+	n = findChild(n, "td", 0)
+	if n == nil {
+		return false
+	}
+
+	n = findChild(n, "table", 0)
+	if n == nil {
+		return false
+	}
+
+	n = findChild(n, "tbody", 0)
+	if n == nil {
+		return false
+	}
+
+	n = findChild(n, "tr", 1)
+	if n == nil {
+		return false
+	}
+
+	n = findChild(n, "td", 0)
+	if n == nil {
+		return false
+	}
+
+	n = findChild(n, "table", 0)
+	if n == nil {
+		return false
+	}
+
+	n = findChild(n, "tbody", 0)
+	if n == nil {
+		return false
+	}
+
+	n = findChild(n, "tr", 1)
+	if n == nil {
+		return false
+	}
+
+	n = findChild(n, "td", 0)
+	if n == nil {
+		return false
+	}
+
+	dh.text = getText(n)
+
+	return true
+}
+
+type statsHandler struct {
+	stats string
+}
+
+func (*statsHandler) matches(n *html.Node) bool {
+	return checkNodeTagNameAndClass(n, "td", "stats-container")
+}
+
+func (sh *statsHandler) process(n *html.Node) bool {
+	s := strings.ReplaceAll(getText(n), "  ", " ")
+	s = strings.ReplaceAll(s, " ", " ")
+	s = strings.ReplaceAll(s, "\t", " ")
+	s = strings.Trim(s, " \t \r\n")
+	sh.stats = s
+	return true
 }

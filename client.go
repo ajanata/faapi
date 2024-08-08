@@ -236,7 +236,8 @@ func (c *Client) GetUsername() (string, error) {
 	if h.username == "" {
 		return "", ErrNotLoggedIn
 	}
-	return h.username, nil
+	n := strings.Trim(h.username, "\n ")
+	return n, nil
 }
 
 type myUsernameHandler struct {

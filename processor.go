@@ -28,7 +28,11 @@
 
 package faapi
 
-import "golang.org/x/net/html"
+import (
+	"strings"
+
+	"golang.org/x/net/html"
+)
 
 type subtreeProcessor struct {
 	tagHandlers []tagHandler
@@ -65,4 +69,36 @@ func findAttribute(attrs []html.Attribute, name string) string {
 
 func checkNodeTagNameAndID(n *html.Node, name, id string) bool {
 	return n.Type == html.ElementNode && n.Data == name && findAttribute(n.Attr, "id") == id
+}
+
+func checkNodeTagNameAndClass(n *html.Node, name, class string) bool {
+	c := findAttribute(n.Attr, "class")
+	hasClass := strings.Contains(c, class)
+	return n.Type == html.ElementNode && n.Data == name && hasClass
+}
+
+func findChild(n *html.Node, tag string, i int) *html.Node {
+	c := 0
+	for t := n.FirstChild; t != nil; t = t.NextSibling {
+		if t.Data == tag {
+			if c == i {
+				return t
+			}
+			c++
+		}
+	}
+	return nil
+}
+
+func getText(n *html.Node) string {
+	s := ""
+	for t := n.FirstChild; t != nil; t = t.NextSibling {
+		if t.Type == html.TextNode {
+			s = s + strings.Trim(t.Data, " \t \r\n") + "\n"
+		}
+		if t.FirstChild != nil {
+			s = s + getText(t) + "\n"
+		}
+	}
+	return strings.Trim(s, " \t \r\n")
 }
