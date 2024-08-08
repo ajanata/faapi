@@ -50,6 +50,13 @@ type (
 		Title  string `json:"title"`
 		User   string `json:"username"`
 	}
+
+	SubmissionType int
+)
+
+const (
+	SubmissionTypeGallery SubmissionType = iota
+	SubmissionTypeScraps
 )
 
 var (
@@ -57,6 +64,17 @@ var (
 	galleryDataRegexp    = regexp.MustCompile(`var descriptions = (.*}});`)
 	submissionDataRegexp = regexp.MustCompile(`var submission_data = (.*}});`)
 )
+
+func (st SubmissionType) URI() string {
+	switch st {
+	case SubmissionTypeGallery:
+		return "gallery"
+	case SubmissionTypeScraps:
+		return "scraps"
+	default:
+		panic("unknown SubmissionType")
+	}
+}
 
 func (c *Client) NewUser(name string) *User {
 	return &User{
@@ -133,13 +151,19 @@ func (u *User) GetJournals(page uint) ([]*Journal, error) {
 // GetSubmissions retrieves the specified page of the user's gallery. Page numbering starts at 1.
 // NOTE: Rating information is currently not provided on the submissions.
 func (u *User) GetSubmissions(page uint) ([]*Submission, error) {
+	return u.GetGallery(SubmissionTypeGallery, page)
+}
+
+// GetGallery retrieves the specified page of the user's gallery of the specified type. Page numbering starts at 1.
+// NOTE: Rating information is currently not provided on the submissions.
+func (u *User) GetGallery(st SubmissionType, page uint) ([]*Submission, error) {
 	if page == 0 {
 		page = 1
 	}
-	log.WithField("user", u).WithField("page", page).Debug("Retrieving submissions")
+	log.WithField("user", u).WithField("page", page).Debugf("Retrieving submissions %s", st.URI())
 
 	var subs []*Submission
-	root, err := u.c.get(fmt.Sprintf("/gallery/%s/%d/", u.name, page))
+	root, err := u.c.get(fmt.Sprintf("/%s/%s/%d/", st.URI(), u.name, page))
 	if err != nil {
 		return subs, err
 	}
